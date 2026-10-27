@@ -1,0 +1,14 @@
+# Downloads Apple's CoreADI from Apple's iTunes DMG into the user's private volume.
+# Never packages, commits, or redistributes Apple's proprietary binary.
+FROM python:3.12-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl p7zip-full ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG ADI_REF=374d83854f657a7fdca45f813387d99d491db0e2
+RUN git clone https://github.com/sacca97/os-findmy-e.git /opt/os-findmy-e \
+    && cd /opt/os-findmy-e && git checkout "$ADI_REF"
+WORKDIR /opt/os-findmy-e
+COPY scripts/prepare_coreadi.sh /usr/local/bin/prepare-coreadi
+RUN chmod +x /usr/local/bin/prepare-coreadi
+VOLUME ["/data"]
+CMD ["/usr/local/bin/prepare-coreadi"]

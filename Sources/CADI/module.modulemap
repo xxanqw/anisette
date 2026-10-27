@@ -1,0 +1,5 @@
+module CADI [system] {
+    header "include/adi_core.h"
+    link "adi_core"
+    export *
+}

@@ -1,0 +1,7 @@
+.git
+.github
+.build
+.swiftpm
+.DS_Store
+.env
+.tmp

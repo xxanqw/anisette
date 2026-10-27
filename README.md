@@ -25,7 +25,7 @@ The setup container downloads **Apple's original iTunes 12.8.3 DMG**, verifies i
 
 Both the C-ABI wrapper and this project pin the Rust implementation to a specific commit for reproducibility. The server fails fast if the CoreADI file is absent. You can restart the service with `docker compose restart anisette`.
 
-To expose it through your reverse proxy, route both HTTP and WebSockets to `127.0.0.1:6969`. Configure your AltStore-compatible client to use `https://your-host.example/v3` **only if it supports changing the Anisette server URL**. This does not patch AltSign or the notarized AltStore Classic app, and cannot fix a client that does not allow the custom endpoint.
+To expose it through your reverse proxy, route both HTTP and WebSockets to `127.0.0.1:6969`. Configure your AltStore-compatible client to use `https://your-host.example` (base URL, without `/v3`) **only if it supports changing the Anisette server URL**. This does not patch AltSign or the notarized AltStore Classic app, and cannot fix a client that does not allow the custom endpoint.
 
 ## API
 
@@ -48,7 +48,7 @@ Because legacy V3 provisioning clients omit the routing value when sending PTM/T
 docker build --progress=plain -t anisette-test .
 ```
 
-The Docker build compiles the pinned Rust backend, Swift project, and runs Swift unit tests. GitHub Actions also downloads the SHA-256-verified macOS CoreADI from Apple's CDN, verifies the emulator loads it, and tests `/healthz`, `/v3/client_info`, and invalid-input handling. It **does not log into Apple or test live provisioning**.
+The Docker build compiles the pinned Rust backend, Swift project, and runs Swift unit tests. GitHub Actions also downloads the SHA-256-verified macOS CoreADI from Apple's CDN, verifies the emulator loads it, and tests `/healthz`, `/v3/client_info`, the WebSocket upgrade, and invalid-input handling. It **does not log into Apple or test live provisioning**.
 
 A real integration test requires:
 

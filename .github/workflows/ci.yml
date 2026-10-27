@@ -34,4 +34,12 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"identifier":"bad","adi_pb":"bad"}' | jq -e \
             '.result == "GetHeadersError"'
+          # Verify that the V3 endpoint upgrades to WebSocket.
+          ws_status="$(curl --silent --max-time 2 -o /dev/null -w '%{http_code}' \
+            -H 'Connection: Upgrade' \
+            -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            http://127.0.0.1:6969/v3/provisioning_session || true)"
+          test "$ws_status" = "101"
           docker logs anisette-test

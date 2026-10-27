@@ -21,7 +21,7 @@ curl -fsS http://127.0.0.1:6969/healthz
 curl -fsS http://127.0.0.1:6969/v3/client_info
 ```
 
-The setup container downloads **Apple's original iTunes 12.8.3 DMG**, verifies its hard-coded SHA-256, and extracts the x86_64 CoreADI Mach-O into a private Docker volume. Neither Apple's file nor any account token is committed to this repository or baked into the application image.
+The setup container downloads **Apple's original iTunes 12.8.3 DMG**, verifies its hard-coded SHA-256, and extracts the x86_64 CoreADI Mach-O into a private Docker volume. Neither Apple's file nor any account token is committed to this repository or baked into the application image. A separate private Docker volume holds emulated device state after provisioning and OTP generation.
 
 Both the C-ABI wrapper and this project pin the Rust implementation to a specific commit for reproducibility. The server fails fast if the CoreADI file is absent. You can restart the service with `docker compose restart anisette`.
 
@@ -48,7 +48,7 @@ Because legacy V3 provisioning clients omit the routing value when sending PTM/T
 docker build --progress=plain -t anisette-test .
 ```
 
-The Docker build compiles the pinned Rust backend, Swift project, and runs Swift unit tests. GitHub Actions also tests `/healthz`, `/v3/client_info`, and invalid-input handling using a dummy image. That **does not emulate Apple or test provisioning**.
+The Docker build compiles the pinned Rust backend, Swift project, and runs Swift unit tests. GitHub Actions also downloads the SHA-256-verified macOS CoreADI from Apple's CDN, verifies the emulator loads it, and tests `/healthz`, `/v3/client_info`, and invalid-input handling. It **does not log into Apple or test live provisioning**.
 
 A real integration test requires:
 
@@ -63,7 +63,7 @@ Only after step 4 should compatibility be claimed. Keep debug logs free of crede
 
 - x86_64 Linux only.
 - Uses an opaque, non-Android ADI state format that existing clients should treat as uninterpreted bytes; clients that interpret Android `adi.pb` cannot use it.
-- No server-side durable storage of OTP state after issuing headers. Repeated `get_headers` calls restore the original `adi_pb` state; if Apple requires evolving store files, state persistence must be added before production deployment.
+- OTP state changes are saved to a private Docker volume, keyed by the machine UUID. Back up this volume along with any client-provided `adi_pb` state. Its contents are sensitive and must not be made publicly readable.
 - No rate limiting, access controls, or TLS termination included. Do not publish port 6969 directly to the internet.
 - Apple's authentication and Anisette APIs are undocumented and can change.
 

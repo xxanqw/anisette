@@ -4,12 +4,13 @@ import HummingbirdWebSocket
 
 let env = ProcessInfo.processInfo.environment
 let corePath = env["ANISETTE_COREADI_PATH"] ?? "/data/CoreADI.x86_64"
+let statePath = env["ANISETTE_STATE_DIR"] ?? "/state"
 let port = Int(env["PORT"] ?? "6969") ?? 6969
 let clientInfo = env["ANISETTE_CLIENT_INFO"] ?? AnisetteProtocol.clientInfo
 let userAgent = env["ANISETTE_USER_AGENT"] ?? AnisetteProtocol.userAgent
 
 do {
-    let engine = try MacADIEngine(coreADIPath: corePath)
+    let engine = try MacADIEngine(coreADIPath: corePath, stateDirectory: statePath)
     let router = Router(context: BasicWebSocketRequestContext.self)
 
     router.get("/healthz") { _, _ in "ok" }
@@ -34,6 +35,7 @@ do {
 
     router.ws("/v3/provisioning_session") { inbound, outbound, _ in
         var activeSession: UUID?
+        var failureType = "InvalidIdentifier"
         do {
             var iterator = inbound.makeAsyncIterator()
             try await outbound.write(.text(try AnisetteProtocol.encodeMessage([
@@ -50,6 +52,7 @@ do {
                 identifierMessage["identifier"], named: "identifier", maxBytes: 16
             )
 
+            failureType = "StartProvisioningError"
             try await outbound.write(.text(try AnisetteProtocol.encodeMessage([
                 "result": "GiveStartProvisioningData",
             ])))
@@ -61,6 +64,7 @@ do {
 
             let session = try await engine.begin(hostUUID: identifier, spim: spim)
             activeSession = session.id
+            failureType = "EndProvisioningError"
             try await outbound.write(.text(try AnisetteProtocol.encodeMessage([
                 "result": "GiveEndProvisioningData",
                 "cpim": session.cpim.base64EncodedString(),
@@ -84,7 +88,7 @@ do {
                 await engine.cancel(id: activeSession)
             }
             try? await outbound.write(.text(try AnisetteProtocol.encodeMessage([
-                "result": "ProvisioningError",
+                "result": failureType,
                 "message": String(describing: error),
             ])))
         }

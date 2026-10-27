@@ -17,8 +17,13 @@ let package = Package(
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
             ],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [.unsafeFlags(["-L/usr/local/lib"])]
         ),
-        .testTarget(name: "AnisetteServerTests", dependencies: ["AnisetteServer"]),
+        .testTarget(
+            name: "AnisetteServerTests",
+            dependencies: ["AnisetteServer"],
+            linkerSettings: [.unsafeFlags(["-L/usr/local/lib"])]
+        ),
     ]
 )

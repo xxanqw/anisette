@@ -13,15 +13,15 @@ private final class ADIHandle {
         guard status == 0, let handle else {
             throw AnisetteError.coreADI("adi_open: \(Self.lastError())")
         }
-        pointer = handle
-        do {
-            try hostUUID.withUnsafeBytes { bytes in
-                try Self.check(adi_set_host_uuid(handle, bytes.bindMemory(to: UInt8.self).baseAddress))
-            }
-        } catch {
-            adi_close(handle)
-            throw error
+        let uuidStatus = hostUUID.withUnsafeBytes { bytes in
+            adi_set_host_uuid(handle, bytes.bindMemory(to: UInt8.self).baseAddress)
         }
+        guard uuidStatus == 0 else {
+            let reason = Self.lastError()
+            adi_close(handle)
+            throw AnisetteError.coreADI("adi_set_host_uuid: \(reason)")
+        }
+        pointer = handle
     }
 
     deinit {
@@ -115,9 +115,14 @@ actor MacADIEngine {
     }
 
     private let image: Data
+    private let stateDirectory: URL
     private var pending: [UUID: Pending] = [:]
 
-    init(coreADIPath: String) throws {
+    init(coreADIPath: String, stateDirectory: String) throws {
+        self.stateDirectory = URL(fileURLWithPath: stateDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: self.stateDirectory, withIntermediateDirectories: true
+        )
         let url = URL(fileURLWithPath: coreADIPath)
         do {
             image = try Data(contentsOf: url)
@@ -127,6 +132,9 @@ actor MacADIEngine {
         guard image.count > 4_096 else {
             throw AnisetteError.unavailable("CoreADI Mach-O binary is missing or too small")
         }
+        // Fail fast if CoreADI's SHA or Mach-O layout is not supported.
+        let probe = try ADIHandle(image: image, hostUUID: Data(repeating: 0, count: 16))
+        _ = probe
     }
 
     func begin(hostUUID: Data, spim: Data) throws -> (id: UUID, cpim: Data) {
@@ -148,13 +156,26 @@ actor MacADIEngine {
             throw AnisetteError.invalidInput("Provisioning session expired")
         }
         try current.handle.finish(session: current.session, ptm: ptm, tk: tk)
-        let state = ProvisionedState(hostUUID: current.hostUUID,
-                                     store: try current.handle.exportStore())
+        let store = try current.handle.exportStore()
+        guard !store.isEmpty else {
+            throw AnisetteError.coreADI("Provisioning yielded an empty CoreADI store")
+        }
+        try saveStore(store, hostUUID: current.hostUUID)
+        let state = ProvisionedState(hostUUID: current.hostUUID, store: store)
         return try state.encode()
     }
 
     func cancel(id: UUID) {
         pending.removeValue(forKey: id)
+    }
+
+    private func stateURL(for hostUUID: Data) -> URL {
+        let filename = hostUUID.map { String(format: "%02x", $0) }.joined()
+        return stateDirectory.appendingPathComponent(filename + ".store")
+    }
+
+    private func saveStore(_ store: Data, hostUUID: Data) throws {
+        try store.write(to: stateURL(for: hostUUID), options: .atomic)
     }
 
     func headers(hostUUID: Data, stateBytes: Data) throws -> HeadersResponse {
@@ -163,8 +184,10 @@ actor MacADIEngine {
             throw AnisetteError.invalidInput("identifier does not match the provisioned state")
         }
         let handle = try ADIHandle(image: image, hostUUID: hostUUID)
-        try handle.importStore(state.store)
+        let diskState = try? Data(contentsOf: stateURL(for: hostUUID))
+        try handle.importStore(diskState ?? state.store)
         let (mid, otp, routing) = try handle.headers()
+        try saveStore(try handle.exportStore(), hostUUID: hostUUID)
         return .success(mid: mid, otp: otp, routing: routing)
     }
 }

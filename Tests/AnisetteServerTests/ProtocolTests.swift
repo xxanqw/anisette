@@ -3,7 +3,7 @@ import Testing
 @testable import AnisetteServer
 
 @Test func stateRoundTrip() throws {
-    let uuid = Data(0..<16)
+    let uuid = Data((0..<16).map { UInt8($0) })
     let store = Data([0x00, 0xFF, 0x42, 0x01])
     let packed = try ProvisionedState(hostUUID: uuid, store: store).encode()
     let unpacked = try ProvisionedState(encoded: packed)

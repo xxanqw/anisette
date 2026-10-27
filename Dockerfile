@@ -22,8 +22,8 @@ RUN swift build -c release --product AnisetteServer
 FROM swift:6.4.1-resolute
 COPY --from=adi-builder /opt/os-findmy-e/native/target/release/libadi_core.so /usr/local/lib/libadi_core.so
 COPY --from=swift-builder /source/.build/release/AnisetteServer /usr/local/bin/anisette-server
-RUN ldconfig
+RUN ldconfig && mkdir -p /state && chown 65532:65532 /state && chmod 700 /state
 USER 65532:65532
-ENV PORT=6969 ANISETTE_COREADI_PATH=/data/CoreADI.x86_64
+ENV PORT=6969 ANISETTE_COREADI_PATH=/data/CoreADI.x86_64 ANISETTE_STATE_DIR=/state
 EXPOSE 6969
 CMD ["/usr/local/bin/anisette-server"]

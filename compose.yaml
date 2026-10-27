@@ -7,9 +7,11 @@ services:
       - "127.0.0.1:${ANISETTE_PORT:-6969}:6969"
     volumes:
       - coreadi:/data:ro
+      - state:/state
     environment:
       PORT: "6969"
       ANISETTE_COREADI_PATH: "/data/CoreADI.x86_64"
+      ANISETTE_STATE_DIR: "/state"
       ANISETTE_CLIENT_INFO: "${ANISETTE_CLIENT_INFO:-<Mac17,3> <macOS;27.0;26A5378j> <com.apple.AuthKit/1 (com.apple.akd/1.0)>}"
       ANISETTE_USER_AGENT: "${ANISETTE_USER_AGENT:-akd/1.0 CFNetwork/808.1.4}"
     restart: unless-stopped
@@ -29,3 +31,4 @@ services:
 
 volumes:
   coreadi:
+  state:

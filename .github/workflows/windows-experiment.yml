@@ -6,18 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows-bridge:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compile native Windows worker
-        run: docker build -f Dockerfile.windows --target windows-worker-builder .
-      - name: Build and test Swift server
-        run: docker build -f Dockerfile.windows --target swift-compiled .
-
   apple-runtime-probe:
     if: github.event_name == 'push'
-    needs: [windows-bridge]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -19,7 +19,7 @@ jobs:
         run: docker build -f Dockerfile.windows -t anisette-windows:probe .
       - name: Probe real CoreADI under Wine
         run: |
-          docker run --rm -d --name anisette-win-probe -p 127.0.0.1:16969:6969 \
+          docker run --rm -d --name anisette-win-probe -e ANISETTE_WINE_DEBUG_LOG=1 -p 127.0.0.1:16969:6969 \
             -v "$PWD/apple-windows:/data:ro" anisette-windows:probe
           trap 'docker logs anisette-win-probe; docker stop anisette-win-probe' EXIT
           for attempt in $(seq 1 30); do

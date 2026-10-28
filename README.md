@@ -76,7 +76,7 @@ The macOS CoreADI emulation and C ABI originate from [sacca97/os-findmy-e](https
 
 The `experiments/windows-coreadi-wine` branch contains a **separate, opt-in** implementation for Windows iTunes CoreADI. It is motivated by reports that AltStore Classic 2.3.1 has trouble with recent Mac Anisette identities and a fixed `akd/1.0 CFNetwork/808.1.4` user agent.
 
-**Status: experimental, not yet validated with a live AltStore 2FA login.** This is a native Windows ADI dispatcher invoked under Wine, **not** an Android runtime and **not** a proxy to someone else's Anisette server. It still requires operator-provided Apple's proprietary Windows DLLs and a real iTunes provisioning round trip. CI can test compilation without a signed-in Apple account; it cannot prove that iTunes/CoreADI runs correctly under Wine or that Apple accepts its OTPs.
+**Status: experimental, not yet validated with a live AltStore 2FA login.** This is a native Windows ADI dispatcher invoked under Wine, **not** an Android runtime and **not** a proxy to someone else's Anisette server. It still requires operator-provided Apple's proprietary Windows DLLs and a real iTunes provisioning round trip. GitHub Actions verifies that Apple's actual CoreADI64.dll initializes under Wine, the Swift server can invoke it, and HTTP/WebSocket V3 endpoints are reachable. This does **not** verify Apple provisioning, OTP acceptance, or an AltStore login.
 
 Prerequisites:
 
@@ -90,10 +90,12 @@ After obtaining the Apple files (or running the extraction script on the host), 
 bash scripts/prepare_windows_coreadi.sh # only if ./apple-windows does not exist
 docker compose -f compose.windows.yaml up --build -d
 docker compose -f compose.windows.yaml logs -f anisette
-curl -fsS http://127.0.0.1:6969/healthz
-curl -fsS http://127.0.0.1:6969/v3/client_info
-curl -fsS http://127.0.0.1:6969/healthz/adi # probes DLL loading under Wine
+curl -fsS http://127.0.0.1:16969/healthz
+curl -fsS http://127.0.0.1:16969/v3/client_info
+curl -fsS http://127.0.0.1:16969/healthz/adi # probes DLL loading under Wine
 ```
+
+The Windows Compose file uses its own project name (`anisette-windows`), state volume, and localhost port `16969` by default. It can run alongside the existing Mac server on port `6969` without replacing it. Set `ANISETTE_WINDOWS_PORT` to change its port and point a **separate HTTPS hostname** (with WebSocket proxying) at that port for AltStore testing. Enable `ANISETTE_WINE_DEBUG_LOG=1` only temporarily for diagnostics; normal operation does not write a persistent Wine stderr log. Restrict access to the expensive `/healthz/adi` diagnostic endpoint in your reverse proxy.
 
 The Windows profile exposed to AltStore is:
 

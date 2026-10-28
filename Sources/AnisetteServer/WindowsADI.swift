@@ -47,7 +47,7 @@ struct WindowsProvisionedState {
         guard identifier == other.identifier, secret.count == other.secret.count else { return false }
         // A client-provided token is a bearer capability; compare without byte-position leakage.
         let difference = zip(secret, other.secret).reduce(UInt8(0)) {
-            $0 ^ ($1.0 ^ $1.1)
+            $0 | ($1.0 ^ $1.1)
         }
         return difference == 0
     }
@@ -210,7 +210,7 @@ actor WindowsADIEngine: AnisetteEngine {
 
     func cancel(id: UUID) {
         guard let session = pending.removeValue(forKey: id) else { return }
-        try? session.worker.send(["CANCEL"])
+        _ = try? session.worker.send(["CANCEL"])
         session.worker.close()
     }
 

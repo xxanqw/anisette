@@ -6,11 +6,28 @@ let env = ProcessInfo.processInfo.environment
 let corePath = env["ANISETTE_COREADI_PATH"] ?? "/data/CoreADI.x86_64"
 let statePath = env["ANISETTE_STATE_DIR"] ?? "/state"
 let port = Int(env["PORT"] ?? "6969") ?? 6969
-let clientInfo = env["ANISETTE_CLIENT_INFO"] ?? AnisetteProtocol.clientInfo
+let backend = env["ANISETTE_BACKEND"] ?? "mac"
+let defaultClientInfo = backend == "windows"
+    ? "<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>"
+    : AnisetteProtocol.clientInfo
+let clientInfo = env["ANISETTE_CLIENT_INFO"] ?? defaultClientInfo
 let userAgent = env["ANISETTE_USER_AGENT"] ?? AnisetteProtocol.userAgent
 
 do {
-    let engine = try MacADIEngine(coreADIPath: corePath, stateDirectory: statePath)
+    let engine: any AnisetteEngine
+    switch backend {
+    case "mac":
+        engine = try MacADIEngine(coreADIPath: corePath, stateDirectory: statePath)
+    case "windows":
+        engine = try WindowsADIEngine(
+            stateDirectory: statePath,
+            winePath: env["ANISETTE_WINE_PATH"] ?? "/usr/bin/wine",
+            workerPath: env["ANISETTE_WINDOWS_WORKER"] ?? "/usr/local/bin/anisette-win.exe",
+            coreADIPath: env["ANISETTE_WINDOWS_COREADI_PATH"] ?? "/data/CoreADI64.dll"
+        )
+    default:
+        throw AnisetteError.invalidInput("Unknown ANISETTE_BACKEND: \(backend)")
+    }
     let router = Router(context: BasicWebSocketRequestContext.self)
 
     router.get("/healthz") { _, _ in "ok" }

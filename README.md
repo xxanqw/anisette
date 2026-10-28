@@ -70,3 +70,36 @@ Only after step 4 should compatibility be claimed. Keep debug logs free of crede
 ## Credits and licenses
 
 The macOS CoreADI emulation and C ABI originate from [sacca97/os-findmy-e](https://github.com/sacca97/os-findmy-e), licensed MIT; the project builds the pinned native `adi-core` Rust crate. Its Unicorn dependency is GPL-2.0, so review license obligations before distributing binaries. Apple CoreADI is proprietary and fetched directly from Apple by each operator. This repository does not include Apple's binaries.
+
+
+## Windows CoreADI experiment (Wine)
+
+The `experiments/windows-coreadi-wine` branch contains a **separate, opt-in** implementation for Windows iTunes CoreADI. It is motivated by reports that AltStore Classic 2.3.1 has trouble with recent Mac Anisette identities and a fixed `akd/1.0 CFNetwork/808.1.4` user agent.
+
+**Status: experimental, not yet validated with a live AltStore 2FA login.** This is a native Windows ADI dispatcher invoked under Wine, **not** an Android runtime and **not** a proxy to someone else's Anisette server. It still requires operator-provided Apple's proprietary Windows DLLs and a real iTunes provisioning round trip. CI can test compilation without a signed-in Apple account; it cannot prove that iTunes/CoreADI runs correctly under Wine or that Apple accepts its OTPs.
+
+Prerequisites:
+
+- Linux x86_64 and Docker Compose V2.
+- A complete, legitimately obtained **64-bit Windows iTunes Apple Application Support installation**, including `CoreADI64.dll` and its dependency DLLs. Put the files into the untracked `apple-windows/` directory so `apple-windows/CoreADI64.dll` exists. This project intentionally does not redistribute or download Apple's Windows binaries.
+- Space for a distinct Wine prefix per client identity. Keep the Docker state volume private and persistent.
+
+After supplying the Apple files, run:
+
+```sh
+docker compose -f compose.windows.yaml up --build -d
+docker compose -f compose.windows.yaml logs -f anisette
+curl -fsS http://127.0.0.1:6969/healthz
+curl -fsS http://127.0.0.1:6969/v3/client_info
+```
+
+The Windows profile exposed to AltStore is:
+
+```text
+<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>
+akd/1.0 CFNetwork/808.1.4
+```
+
+**Compatibility contract:** The existing Mac backend remains the default in `compose.yaml`. The Windows configuration uses an independent state volume and `WADIv1` bearer tokens. Do not migrate `MADIv1` tokens between engines. The server never asks for Apple ID credentials or 2FA codes. A successful `/healthz` only proves Swift started, not that CoreADI64 loaded or provisioning works. A complete provisioning and then successful login are still required.
+
+**Known risks:** Apple may reject the Windows identity, Wine may not implement all iTunes DLL calls, Apple's native dependencies may be missing, and the currently hard-coded routing fallback may be wrong. Do not replace a working server with this experiment. Never publish the state volume, worker pipe, or a Docker control socket over the network.

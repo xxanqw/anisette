@@ -43,3 +43,29 @@ import Testing
         try AnisetteProtocol.decodeBase64(oversized, named: "identifier", maxBytes: 16)
     }
 }
+
+@Test func windowsStateRoundTrip() throws {
+    let identifier = Data((0..<16).map { UInt8($0) })
+    let secret = Data(repeating: 0xB4, count: WindowsProvisionedState.tokenSize)
+    let original = try WindowsProvisionedState(identifier: identifier, secret: secret)
+    let restored = try WindowsProvisionedState(encoded: original.encode())
+    #expect(restored.identifier == identifier)
+    #expect(restored.matches(original))
+}
+
+@Test func windowsStateRejectsWrongToken() throws {
+    let identifier = Data(repeating: 0x11, count: 16)
+    let original = try WindowsProvisionedState(
+        identifier: identifier, secret: Data(repeating: 0x11, count: 32)
+    )
+    let swapped = try WindowsProvisionedState(
+        identifier: identifier, secret: Data(repeating: 0x12, count: 32)
+    )
+    #expect(!original.matches(swapped))
+    #expect(throws: AnisetteError.self) {
+        try WindowsProvisionedState(encoded: Data(original.encode().dropLast()))
+    }
+    #expect(throws: AnisetteError.self) {
+        try WindowsProvisionedState(encoded: Data("MADIv1".utf8))
+    }
+}

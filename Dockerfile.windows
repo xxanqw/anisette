@@ -1,0 +1,44 @@
+# Experimental Wine-backed Windows CoreADI V3 implementation.
+# Apple-proprietary DLLs are NEVER bundled; the operator mounts their own /data tree.
+FROM debian:bookworm AS windows-worker-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc-mingw-w64-x86-64 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /source
+COPY windows/worker.c ./worker.c
+RUN x86_64-w64-mingw32-gcc -O2 -Wall -Wextra -Werror \
+    -static -o /anisette-win.exe worker.c -lcrypt32
+
+FROM swift:6.4.1-resolute AS swift-builder
+WORKDIR /source
+COPY Package.swift ./
+COPY Sources Sources
+COPY Tests Tests
+FROM rust:1-bookworm AS adi-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang cmake libclang-dev pkg-config make build-essential git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG ADI_REF=374d83854f657a7fdca45f813387d99d491db0e2
+RUN git clone https://github.com/sacca97/os-findmy-e.git /opt/os-findmy-e \
+    && cd /opt/os-findmy-e && git checkout "$ADI_REF"
+WORKDIR /opt/os-findmy-e/native
+RUN cargo build --release -p adi-core --lib
+
+FROM swift-builder AS swift-compiled
+COPY --from=adi-builder /opt/os-findmy-e/native/target/release/libadi_core.so /usr/local/lib/libadi_core.so
+RUN ldconfig
+RUN swift test -c release && swift build -c release --product AnisetteServer
+
+FROM swift:6.4.1-resolute
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wine64 wine ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=adi-builder /opt/os-findmy-e/native/target/release/libadi_core.so /usr/local/lib/libadi_core.so
+COPY --from=swift-compiled /source/.build/release/AnisetteServer /usr/local/bin/anisette-server
+COPY --from=windows-worker-builder /anisette-win.exe /usr/local/bin/anisette-win.exe
+RUN ldconfig && mkdir -p /state && chown 65532:65532 /state && chmod 700 /state
+USER 65532:65532
+ENV PORT=6969 ANISETTE_BACKEND=windows ANISETTE_STATE_DIR=/state \
+    ANISETTE_WINDOWS_COREADI_PATH=/data/CoreADI64.dll
+EXPOSE 6969
+CMD ["/usr/local/bin/anisette-server"]

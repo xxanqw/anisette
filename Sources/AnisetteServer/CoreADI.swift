@@ -107,7 +107,7 @@ private final class ADIHandle {
 
 /// Prevents concurrent access to a CoreADI instance, in particular during provisioning.
 /// No passwords or Apple ID session data are retained by the server.
-actor MacADIEngine {
+actor MacADIEngine: AnisetteEngine {
     private struct Pending {
         let handle: ADIHandle
         let hostUUID: Data

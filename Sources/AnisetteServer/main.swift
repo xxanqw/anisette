@@ -36,7 +36,7 @@ do {
             try await engine.probe()
             return "ok"
         } catch {
-            print("ADI health probe failed: \(error)")
+            FileHandle.standardError.write(Data("ADI health probe failed: \(error)\n".utf8))
             throw error
         }
     }

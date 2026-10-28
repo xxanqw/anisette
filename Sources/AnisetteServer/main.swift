@@ -32,8 +32,13 @@ do {
 
     router.get("/healthz") { _, _ in "ok" }
     router.get("/healthz/adi") { _, _ in
-        try await engine.probe()
-        return "ok"
+        do {
+            try await engine.probe()
+            return "ok"
+        } catch {
+            print("ADI health probe failed: \(error)")
+            throw error
+        }
     }
     router.get("/v3/client_info") { _, _ in
         ClientInfoResponse(clientInfo: clientInfo, userAgent: userAgent)

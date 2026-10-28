@@ -53,6 +53,23 @@ struct WindowsProvisionedState {
     }
 }
 
+/// MinGW's text-mode stdout emits CRLF even when the worker calls puts("OK").
+/// The framing reader consumes LF, so strip the remaining CR before parsing.
+enum WindowsWorkerProtocol {
+    static func parseLine(_ bytes: [UInt8]) throws -> [String] {
+        var line = bytes
+        if line.last == 0x0D { line.removeLast() }
+        guard let response = String(bytes: line, encoding: .utf8) else {
+            throw AnisetteError.unavailable("Invalid UTF-8 from Windows ADI worker")
+        }
+        let fields = response.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        guard fields.first == "OK" else {
+            throw AnisetteError.coreADI("Windows CoreADI: " + fields.dropFirst().joined(separator: " "))
+        }
+        return Array(fields.dropFirst())
+    }
+}
+
 /// A Windows program executing the actual, operator-supplied CoreADI64.dll under Wine.
 /// Only one command is active per worker, and a provisioning worker stays alive until FINISH.
 private final class WineADIWorker {
@@ -67,7 +84,7 @@ private final class WineADIWorker {
         process.standardOutput = output
         let diagnosticURL = URL(fileURLWithPath: "/state/wine-worker-stderr.log")
         if !FileManager.default.fileExists(atPath: diagnosticURL.path) {
-            FileManager.default.createFile(atPath: diagnosticURL.path, contents: nil)
+            _ = FileManager.default.createFile(atPath: diagnosticURL.path, contents: nil)
         }
         process.standardError = try FileHandle(forWritingTo: diagnosticURL)
         var environment = ProcessInfo.processInfo.environment
@@ -96,15 +113,10 @@ private final class WineADIWorker {
             if byte == 0x0A { break }
             line.append(byte)
         }
-        guard line.count < 2 * 1_048_576,
-              let response = String(bytes: line, encoding: .utf8) else {
+        guard line.count < 2 * 1_048_576 else {
             throw AnisetteError.unavailable("Invalid Windows ADI worker response")
         }
-        let fields = response.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        guard fields.first == "OK" else {
-            throw AnisetteError.coreADI("Windows CoreADI: " + fields.dropFirst().joined(separator: " "))
-        }
-        return Array(fields.dropFirst())
+        return try WindowsWorkerProtocol.parseLine(line)
     }
 
     func close() {

@@ -70,3 +70,15 @@ import Testing
         try WindowsProvisionedState(encoded: Data("MADIv1".utf8))
     }
 }
+
+@Test func windowsWorkerParsesCRLFResponses() throws {
+    #expect(try WindowsWorkerProtocol.parseLine(Array("OK\\r".utf8)).isEmpty)
+    #expect(try WindowsWorkerProtocol.parseLine(Array("OK\\tYWJj\\t17\\r".utf8)) == ["YWJj", "17"])
+    #expect(try WindowsWorkerProtocol.parseLine(Array("OK".utf8)).isEmpty)
+}
+
+@Test func windowsWorkerRejectsErrorFrames() {
+    #expect(throws: AnisetteError.self) {
+        try WindowsWorkerProtocol.parseLine(Array("ERR\\t-45001\\r".utf8))
+    }
+}

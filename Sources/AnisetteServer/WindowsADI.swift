@@ -120,8 +120,12 @@ private final class WineADIWorker {
     }
 
     func close() {
-        if process.isRunning {
-            // Do not block cleanup while a worker is hung in a proprietary DLL.
+        guard process.isRunning else { return }
+        // CoreADI saves its provisioning state during shutdown. Do not SIGTERM
+        // the Wine process immediately after FINISH or HEADERS.
+        if (try? send(["QUIT"])) != nil {
+            process.waitUntilExit()
+        } else if process.isRunning {
             process.terminate()
         }
     }
@@ -187,6 +191,9 @@ actor WindowsADIEngine: AnisetteEngine {
         }
         guard pending.count < 8 else {
             throw AnisetteError.unavailable("Too many Windows ADI sessions")
+        }
+        guard !pending.values.contains(where: { $0.identifier == hostUUID }) else {
+            throw AnisetteError.unavailable("Windows ADI identifier is already provisioning")
         }
         let deviceWorker = try worker(for: hostUUID)
         do {

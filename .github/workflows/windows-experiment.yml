@@ -41,6 +41,12 @@ jobs:
               anisette-win-probe /usr/bin/wine /usr/local/bin/anisette-win.exe 'Z:\data\CoreADI64.dll' || true
             exit 1
           fi
+          curl -fsS http://127.0.0.1:16969/v3/client_info | jq -e '.client_info | contains("<Windows;")'
+          ws_headers="$(curl --http1.1 -sS --max-time 3 -D - -o /dev/null \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            http://127.0.0.1:16969/v3/provisioning_session || true)"
+          grep -q '101 Switching Protocols' <<< "$ws_headers"
 
   native-coreadi-probe:
     runs-on: ubuntu-latest

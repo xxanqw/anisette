@@ -36,7 +36,9 @@ jobs:
             if curl -fsS http://127.0.0.1:16969/healthz >/dev/null; then break; fi
             sleep 2
           done
-          if ! curl -fsS --max-time 120 http://127.0.0.1:16969/healthz/adi; then
+          if ! curl -sS --fail-with-body --max-time 120 http://127.0.0.1:16969/healthz/adi; then
+            echo 'Swift-launched Wine stderr:'
+            docker exec anisette-win-probe sh -c 'cat /state/wine-worker-stderr.log 2>/dev/null || true'
             echo 'Direct Wine/CoreADI diagnostics (no Apple account involved):'
             docker exec anisette-win-probe id
             docker exec anisette-win-probe ls -l /data/CoreADI64.dll /usr/local/bin/anisette-win.exe /usr/bin/wine

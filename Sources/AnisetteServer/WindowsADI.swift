@@ -65,7 +65,11 @@ private final class WineADIWorker {
         process.arguments = [binary, "Z:" + coreADI.replacingOccurrences(of: "/", with: "\\")]
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        let diagnosticURL = URL(fileURLWithPath: "/state/wine-worker-stderr.log")
+        if !FileManager.default.fileExists(atPath: diagnosticURL.path) {
+            FileManager.default.createFile(atPath: diagnosticURL.path, contents: nil)
+        }
+        process.standardError = try FileHandle(forWritingTo: diagnosticURL)
         var environment = ProcessInfo.processInfo.environment
         environment["WINEPREFIX"] = prefix
         environment["WINEARCH"] = "win64"

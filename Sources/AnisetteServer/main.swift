@@ -13,6 +13,7 @@ func anisetteErrorCategory(_ error: Error) -> String {
     switch value {
     case .invalidInput(let reason):
         if reason.contains("Unsupported Windows ADI state") { return "stale-adi-pb" }
+        if reason.contains("Windows ADI state missing") { return "needs-provisioning" }
         if reason.contains("identifier does not match") { return "identifier-mismatch" }
         if reason.contains("token does not match") { return "token-mismatch" }
         return "invalid-input"

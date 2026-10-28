@@ -247,6 +247,9 @@ actor WindowsADIEngine: AnisetteEngine {
             throw AnisetteError.invalidInput("identifier does not match Windows ADI state")
         }
         let tokenPath = directory(for: hostUUID).appendingPathComponent("token")
+        guard FileManager.default.fileExists(atPath: tokenPath.path) else {
+            throw AnisetteError.invalidInput("Windows ADI state missing; re-provision required")
+        }
         let stored = try WindowsProvisionedState(encoded: Data(contentsOf: tokenPath))
         guard received.matches(stored) else {
             throw AnisetteError.invalidInput("Windows ADI state token does not match")

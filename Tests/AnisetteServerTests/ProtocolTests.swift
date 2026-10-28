@@ -61,7 +61,8 @@ import Testing
     let swapped = try WindowsProvisionedState(
         identifier: identifier, secret: Data(repeating: 0x12, count: 32)
     )
-    #expect(!original.matches(swapped))
+    let matches = original.matches(swapped)
+    #expect(matches == false)
     #expect(throws: AnisetteError.self) {
         try WindowsProvisionedState(encoded: Data(original.encode().dropLast()))
     }

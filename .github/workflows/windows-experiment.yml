@@ -45,3 +45,22 @@ jobs:
               anisette-win-probe /usr/bin/wine /usr/local/bin/anisette-win.exe 'Z:\data\CoreADI64.dll' || true
             exit 1
           fi
+
+  native-coreadi-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Wine and MSI tools
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full msitools wine wine64 gcc-mingw-w64-x86-64
+      - name: Prepare original Apple CoreADI files
+        run: bash scripts/prepare_windows_coreadi.sh
+      - name: Cross-compile Windows test process
+        run: |
+          x86_64-w64-mingw32-gcc -O2 -Wall -Wextra -Werror -static \
+            -o "$RUNNER_TEMP/anisette-win.exe" windows/worker.c -lcrypt32
+      - name: Directly initialize Apple CoreADI through Wine
+        run: |
+          set -o pipefail
+          export WINEPREFIX="$RUNNER_TEMP/anisette-wine" WINEARCH=win64 WINEDEBUG=-all
+          coreadi_path="$(winepath -w "$PWD/apple-windows/CoreADI64.dll")"
+          printf 'PING\nQUIT\n' | timeout 90s wine "$RUNNER_TEMP/anisette-win.exe" "$coreadi_path"

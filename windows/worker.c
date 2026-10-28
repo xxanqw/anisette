@@ -140,7 +140,8 @@ int main(int argc, char **argv) {
         error_reply(-(int32_t)GetLastError());
         return 2;
     }
-    dispatch_fn = (Dispatch)GetProcAddress(module, "vdfut768ig");
+    FARPROC symbol = GetProcAddress(module, "vdfut768ig");
+    memcpy(&dispatch_fn, &symbol, sizeof(dispatch_fn));
     if (!dispatch_fn) {
         error_text("Missing ADI dispatcher");
         FreeLibrary(module);

@@ -33,14 +33,23 @@ sha256sum "$work_dir/iTunes64Setup.exe"
 mkdir -p "$work_dir/setup" "$work_dir/extracted"
 7z x -y "-o$work_dir/setup" "$work_dir/iTunes64Setup.exe" >/dev/null
 
-support_msi="$(find "$work_dir/setup" -type f -iname '*AppleApplicationSupport64*.msi' -print -quit)"
-if [ -z "$support_msi" ]; then
-  printf 'The Apple installer did not contain AppleApplicationSupport64.msi.\n' >&2
+mapfile -d '' -t msi_packages < <(find "$work_dir/setup" -type f -iname '*.msi' -print0)
+if [ "${#msi_packages[@]}" -eq 0 ]; then
+  printf 'The Apple installer did not contain any MSI packages.\n' >&2
   exit 1
 fi
 
-printf 'Extracting Apple Application Support 64-bit MSI...\n'
-msiextract -C "$work_dir/extracted" "$support_msi" >/dev/null
+# Newer iTunes installers integrate Apple Application Support into other MSIs.
+# Inspect every embedded package instead of assuming a specific filename.
+for msi in "${msi_packages[@]}"; do
+  msi_name="$(basename -- "$msi")"
+  extraction_dir="$work_dir/extracted/$msi_name"
+  mkdir -p "$extraction_dir"
+  printf 'Inspecting Apple MSI: %s\n' "$msi_name"
+  if ! msiextract -C "$extraction_dir" "$msi" >/dev/null; then
+    printf 'Warning: could not unpack %s; continuing.\n' "$msi_name" >&2
+  fi
+done
 
 dll="$(find "$work_dir/extracted" -type f -iname 'CoreADI64.dll' -print -quit)"
 if [ -z "$dll" ]; then
@@ -50,7 +59,8 @@ fi
 
 mkdir -p "$destination"
 cp -a -- "$(dirname -- "$dll")/." "$destination/"
-chmod -R go-rwx "$destination"
+# DLLs are not credentials; the unprivileged container must be able to read them.
+chmod -R a+rX "$destination"
 
 printf 'Prepared %s\n' "$destination/CoreADI64.dll"
 printf 'Apple DLLs stay local. Start the experiment using:\n'

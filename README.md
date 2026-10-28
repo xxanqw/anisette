@@ -1,109 +1,76 @@
 # anisette
 
-Experimental, Linux-hosted Anisette V3 service for AltStore Classic and compatible clients. Written in Swift 6.4.1 (Hummingbird), using a Rust C-ABI backend that emulates the **macOS** CoreADI library with Unicorn. No Android environment, Android provisioning, or Android device identifier is used.
+Linux-hosted **Anisette V3** server, written in **Swift 6.4.1** with Hummingbird. The **default deployment uses Apple's Windows iTunes CoreADI64.dll through Wine**, not Android. The earlier macOS CoreADI/Unicorn implementation remains available as a rollback option.
 
-> This project is an experimental interoperability implementation, **not a verified replacement for AltServer**. Building and passing protocol tests do not establish that Apple's login service will accept generated headers or that every AltStore client can use them. In particular, Apple's private authentication flow may change without notice.
+> **Experimental:** HTTP/WebSocket endpoints, the actual Windows DLL initialization, and Swift-to-Wine IPC have passed GitHub Actions smoke tests. **An actual V3 provisioning round-trip, MID/OTP acceptance, and AltStore Classic 2.3.1 Apple ID login have not been verified.** Anisette cannot necessarily fix errors caused by AltSign inside the notarized client.
 
 ## Requirements
 
-- Docker Engine and Docker Compose V2, on **Linux x86_64** (the CoreADI image is x86_64).
-- Network access to GitHub and Apple's iTunes download during the one-time CoreADI setup.
-- Apple ID credentials are entered **only in your AltStore/AltServer client**, never in this service.
-- HTTPS reverse proxy if used beyond localhost (e.g. Caddy, Nginx, Tailscale). The Compose example deliberately binds to `127.0.0.1`.
+- Linux **x86_64**, Docker Engine and Docker Compose V2.
+- `curl`, `7z` and `msiextract` (packages `p7zip-full`, `msitools`) **on the host** for the Apple Windows iTunes DLL extraction.
+- A reverse proxy that forwards both HTTP and WebSocket upgrades to `127.0.0.1:6969` (for example, an existing `ani.xxanqw.me` reverse proxy).
+- Apple ID credentials and 2FA codes are entered **only into AltStore**; never send them to this service.
 
-## Deploy
+## Replace an existing Mac Anisette deployment
+
+**Run the following in the SAME checkout/directory and with the SAME Compose project name used by your current deployment.** This replaces the running `anisette` service rather than starting a second instance. If you previously supplied `-p` or `COMPOSE_PROJECT_NAME`, use the same value.
 
 ```sh
-docker compose --profile setup build coreadi-setup
-docker compose --profile setup run --rm coreadi-setup
-docker compose up --build -d anisette
+git fetch origin
+git switch experiments/windows-coreadi-wine
+# Install extraction tools if needed (Debian/Ubuntu):
+sudo apt-get install -y curl p7zip-full msitools
+# The Apple-proprietary binaries are downloaded directly from Apple, never committed:
+test -f apple-windows/CoreADI64.dll || bash scripts/prepare_windows_coreadi.sh
+
+docker compose config --quiet
+docker compose up --build -d --remove-orphans anisette
+docker compose ps
 curl -fsS http://127.0.0.1:6969/healthz
+curl -fsS http://127.0.0.1:6969/healthz/adi
 curl -fsS http://127.0.0.1:6969/v3/client_info
 ```
 
-The setup container downloads **Apple's original iTunes 12.8.3 DMG**, verifies its hard-coded SHA-256, and extracts the x86_64 CoreADI Mach-O into a private Docker volume. Neither Apple's file nor any account token is committed to this repository or baked into the application image. A separate private Docker volume holds emulated device state after provisioning and OTP generation.
+The default `compose.yaml` retains the original **service name `anisette`, container port 6969, loopback host port ${ANISETTE_PORT:-6969}, and default directory-derived Compose project**. A normal `docker compose up` recreates the service in place; **do not first run `docker compose down -v`**. The existing HTTPS hostname and proxy can keep pointing to the same port; no new subdomain or proxy change is required.
 
-Both the C-ABI wrapper and this project pin the Rust implementation to a specific commit for reproducibility. The server fails fast if the CoreADI file is absent. You can restart the service with `docker compose restart anisette`.
+The new state volume is `windows-state`; the existing Mac `coreadi` and `state` volumes are preserved for rollback. These state formats are not interchangeable. The Windows backend returns opaque `WADIv1` capability tokens; a previously cached `MADIv1` token cannot be reused. If AltStore continues sending the Mac token, it must re-provision a fresh Windows identity. This may require clearing AltStore's persisted Anisette identity/cache, depending on client behavior.
 
-To expose it through your reverse proxy, route both HTTP and WebSockets to `127.0.0.1:6969`. Configure your AltStore-compatible client to use `https://your-host.example` (base URL, without `/v3`) **only if it supports changing the Anisette server URL**. This does not patch AltSign or the notarized AltStore Classic app, and cannot fix a client that does not allow the custom endpoint.
-
-## API
-
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /healthz` | Health check |
-| `GET /v3/client_info` | Mac AuthKit `client_info` and CFNetwork user agent |
-| `WS /v3/provisioning_session` | V3 identifier/SPIM → CPIM → PTM/TK provisioning handshake |
-| `POST /v3/get_headers` | Accepts Base64 `identifier` and `adi_pb`, returns MID, OTP and RINFO |
-
-The protocol uses the standard V3 message labels. The `adi_pb` value is an **opaque, server-specific** encoded blob containing the emulated macOS store and 16-byte machine UUID. It cannot be exchanged with Android-based Anisette V3 services. Preserve the exact Base64 string the server returns during provisioning.
-
-This service defaults to a modern Mac AuthKit identity and `akd/1.0 CFNetwork/808.1.4` to match the AltSign client family under investigation. You can configure `ANISETTE_CLIENT_INFO` and `ANISETTE_USER_AGENT` in a Compose `.env` file; changing these values does **not** change the emulated CoreADI binary.
-
-Because legacy V3 provisioning clients omit the routing value when sending PTM/TK, the backend currently uses the legacy fallback `17106176`. If Apple's response uses a different value, provisioning may fail; this requires real-client validation, not merely successful HTTP responses.
-
-## Testing
-
-```sh
-docker build --progress=plain -t anisette-test .
-```
-
-The Docker build compiles the pinned Rust backend, Swift project, and runs Swift unit tests. GitHub Actions also downloads the SHA-256-verified macOS CoreADI from Apple's CDN, verifies the emulator loads it, and tests `/healthz`, `/v3/client_info`, the WebSocket upgrade, and invalid-input handling. It **does not log into Apple or test live provisioning**.
-
-A real integration test requires:
-
-1. A valid Apple ID on a device you control, with 2FA.
-2. The downloaded verified CoreADI image.
-3. A V3-compatible client configured to point at your Anisette URL.
-4. A complete WebSocket handshake, followed by a successful `/v3/get_headers`, and then an actual client login.
-
-Only after step 4 should compatibility be claimed. Keep debug logs free of credentials, 2FA codes, `adi_pb`, MID/OTP values, and Apple cookies.
-
-## Current limitations
-
-- x86_64 Linux only.
-- Uses an opaque, non-Android ADI state format that existing clients should treat as uninterpreted bytes; clients that interpret Android `adi.pb` cannot use it.
-- OTP state changes are saved to a private Docker volume, keyed by the machine UUID. Back up this volume along with any client-provided `adi_pb` state. Its contents are sensitive and must not be made publicly readable.
-- No rate limiting, access controls, or TLS termination included. Do not publish port 6969 directly to the internet.
-- Apple's authentication and Anisette APIs are undocumented and can change.
-
-## Credits and licenses
-
-The macOS CoreADI emulation and C ABI originate from [sacca97/os-findmy-e](https://github.com/sacca97/os-findmy-e), licensed MIT; the project builds the pinned native `adi-core` Rust crate. Its Unicorn dependency is GPL-2.0, so review license obligations before distributing binaries. Apple CoreADI is proprietary and fetched directly from Apple by each operator. This repository does not include Apple's binaries.
-
-
-## Windows CoreADI experiment (Wine)
-
-The `experiments/windows-coreadi-wine` branch contains a **separate, opt-in** implementation for Windows iTunes CoreADI. It is motivated by reports that AltStore Classic 2.3.1 has trouble with recent Mac Anisette identities and a fixed `akd/1.0 CFNetwork/808.1.4` user agent.
-
-**Status: experimental, not yet validated with a live AltStore 2FA login.** This is a native Windows ADI dispatcher invoked under Wine, **not** an Android runtime and **not** a proxy to someone else's Anisette server. It still requires operator-provided Apple's proprietary Windows DLLs and a real iTunes provisioning round trip. GitHub Actions verifies that Apple's actual CoreADI64.dll initializes under Wine, the Swift server can invoke it, and HTTP/WebSocket V3 endpoints are reachable. This does **not** verify Apple provisioning, OTP acceptance, or an AltStore login.
-
-Prerequisites:
-
-- Linux x86_64 and Docker Compose V2.
-- A complete, legitimately obtained **64-bit Windows iTunes Apple Application Support installation**, including `CoreADI64.dll` and its dependency DLLs. The optional host-side script `scripts/prepare_windows_coreadi.sh` can download the original Windows installer directly from Apple and extract those files. It requires `curl`, `7z`, and `msiextract` (msitools). This project does not redistribute Apple's Windows binaries.
-- Space for a distinct Wine prefix per client identity. Keep the Docker state volume private and persistent.
-
-After obtaining the Apple files (or running the extraction script on the host), start the experimental server:
-
-```sh
-bash scripts/prepare_windows_coreadi.sh # only if ./apple-windows does not exist
-docker compose -f compose.windows.yaml up --build -d
-docker compose -f compose.windows.yaml logs -f anisette
-curl -fsS http://127.0.0.1:16969/healthz
-curl -fsS http://127.0.0.1:16969/v3/client_info
-curl -fsS http://127.0.0.1:16969/healthz/adi # probes DLL loading under Wine
-```
-
-The Windows Compose file uses its own project name (`anisette-windows`), state volume, and localhost port `16969` by default. It can run alongside the existing Mac server on port `6969` without replacing it. Set `ANISETTE_WINDOWS_PORT` to change its port and point a **separate HTTPS hostname** (with WebSocket proxying) at that port for AltStore testing. Enable `ANISETTE_WINE_DEBUG_LOG=1` only temporarily for diagnostics; normal operation does not write a persistent Wine stderr log. Restrict access to the expensive `/healthz/adi` diagnostic endpoint in your reverse proxy.
-
-The Windows profile exposed to AltStore is:
+The Windows client profile is:
 
 ```text
 <PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>
 akd/1.0 CFNetwork/808.1.4
 ```
 
-**Compatibility contract:** The existing Mac backend remains the default in `compose.yaml`. The Windows configuration uses an independent state volume and `WADIv1` bearer tokens. Do not migrate `MADIv1` tokens between engines. The server never asks for Apple ID credentials or 2FA codes. A successful `/healthz` only proves Swift started, not that CoreADI64 loaded or provisioning works. A complete provisioning and then successful login are still required.
+All Apple CoreADI DLLs remain operator-supplied and mounted read-only from `./apple-windows`; they are not baked into Docker images or published in Git. Each client identifier gets a private persistent Wine prefix. Enable `ANISETTE_WINE_DEBUG_LOG=1` only temporarily for troubleshooting.
 
-**Known risks:** Apple may reject the Windows identity, Wine may not implement all iTunes DLL calls, Apple's native dependencies may be missing, and the currently hard-coded routing fallback may be wrong. Do not replace a working server with this experiment. Never publish the state volume, worker pipe, or a Docker control socket over the network.
+### Roll back to the original macOS backend
+
+```sh
+docker compose -f compose.mac.yaml up --build -d --remove-orphans anisette
+curl -fsS http://127.0.0.1:6969/v3/client_info
+```
+
+This uses the preserved original Mac volumes. Never use `down -v` for a rollback.
+
+## API
+
+| Endpoint | Function |
+| --- | --- |
+| `GET /healthz` | Swift HTTP liveness |
+| `GET /healthz/adi` | Actually initializes Windows CoreADI via Wine (expensive; do not expose publicly) |
+| `GET /v3/client_info` | Windows iTunes identity and CFNetwork user agent |
+| `WS /v3/provisioning_session` | Identifier/SPIM → CPIM → PTM/TK → opaque `adi_pb` |
+| `POST /v3/get_headers` | Accepts Base64 `identifier` and `adi_pb`; returns MID, OTP, RINFO |
+
+V3 provisioning includes the Apple server's private handshake and is **not tested end-to-end** by the automated checks. The legacy V3 client does not supply a routing value during PTM/TK completion; the worker currently uses fallback `17106176`. Real-world compatibility remains unproven.
+
+## Verification and safety
+
+GitHub Actions compiles the Windows worker, Swift code and linked Rust compatibility library, downloads the original Apple DLL from the official Windows iTunes installer, and verifies its initialization under Wine and from Swift inside Docker. The runtime smoke test also checks `/healthz/adi`, Windows `client_info` and HTTP 101 WebSocket upgrade. These checks **do not authenticate an Apple ID**.
+
+Keep TCP 6969 bound only to loopback, protect the proxy, and never log credentials, 2FA codes, ADI tokens or MID/OTP values. This project has no built-in rate limiting or authorization; exposing the V3 service to the public internet requires additional proxy controls. Apple's private interfaces may change without notice.
+
+## Credits and licensing
+
+The optional macOS CoreADI backend uses the Rust C ABI from [sacca97/os-findmy-e](https://github.com/sacca97/os-findmy-e) with Unicorn. Unicorn's GPL-2.0 obligations should be reviewed before distribution. The Windows CoreADI DLL is proprietary Apple software and must be obtained independently from Apple's installer; no Apple binaries are distributed here.

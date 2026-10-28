@@ -15,6 +15,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y p7zip-full msitools
       - name: Download original Apple dependencies
         run: bash scripts/prepare_windows_coreadi.sh
+      - name: Validate replacement Compose and rollback Compose
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.mac.yaml config --quiet
+          docker compose -f compose.yaml config --format json \
+            | jq -e '.services.anisette.build.dockerfile == "Dockerfile.windows" and .services.anisette.environment.ANISETTE_BACKEND == "windows" and (.services.anisette.ports[0].published | tostring) == "6969"'
       - name: Build experimental Linux/Wine service
         run: docker build -f Dockerfile.windows -t anisette-windows:probe .
       - name: Probe real CoreADI under Wine

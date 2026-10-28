@@ -14,3 +14,26 @@ jobs:
         run: docker build -f Dockerfile.windows --target windows-worker-builder .
       - name: Build and test Swift server
         run: docker build -f Dockerfile.windows --target swift-compiled .
+
+  apple-runtime-probe:
+    if: github.event_name == 'push'
+    needs: [windows-bridge]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MSI extractors
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full msitools
+      - name: Download original Apple dependencies
+        run: bash scripts/prepare_windows_coreadi.sh
+      - name: Build experimental Linux/Wine service
+        run: docker build -f Dockerfile.windows -t anisette-windows:probe .
+      - name: Probe real CoreADI under Wine
+        run: |
+          docker run --rm -d --name anisette-win-probe -p 127.0.0.1:16969:6969 \
+            -v "$PWD/apple-windows:/data:ro" anisette-windows:probe
+          trap 'docker logs anisette-win-probe; docker stop anisette-win-probe' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:16969/healthz >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS --max-time 120 http://127.0.0.1:16969/healthz/adi

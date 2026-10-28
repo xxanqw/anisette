@@ -137,6 +137,10 @@ actor MacADIEngine: AnisetteEngine {
         _ = probe
     }
 
+    func probe() throws {
+        // The Mach-O is fully loaded and validated during initialization.
+    }
+
     func begin(hostUUID: Data, spim: Data) throws -> (id: UUID, cpim: Data) {
         guard hostUUID.count == 16 else {
             throw AnisetteError.invalidInput("identifier must be 16 bytes")

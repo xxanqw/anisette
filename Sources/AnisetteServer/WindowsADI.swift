@@ -2,6 +2,7 @@ import Foundation
 
 /// All backends implement the same V3 protocol. The Mac engine remains the default.
 protocol AnisetteEngine: Actor {
+    func probe() throws
     func begin(hostUUID: Data, spim: Data) throws -> (id: UUID, cpim: Data)
     func finish(id: UUID, ptm: Data, tk: Data) throws -> Data
     func cancel(id: UUID)
@@ -157,6 +158,11 @@ actor WindowsADIEngine: AnisetteEngine {
             wine: winePath, binary: workerPath,
             coreADI: coreADIPath, prefix: prefix.path
         )
+    }
+
+    func probe() throws {
+        let testWorker = try worker(for: Data(repeating: 0, count: 16))
+        testWorker.close()
     }
 
     func begin(hostUUID: Data, spim: Data) throws -> (id: UUID, cpim: Data) {

@@ -31,6 +31,10 @@ do {
     let router = Router(context: BasicWebSocketRequestContext.self)
 
     router.get("/healthz") { _, _ in "ok" }
+    router.get("/healthz/adi") { _, _ in
+        try await engine.probe()
+        return "ok"
+    }
     router.get("/v3/client_info") { _, _ in
         ClientInfoResponse(clientInfo: clientInfo, userAgent: userAgent)
     }

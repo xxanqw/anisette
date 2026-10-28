@@ -81,16 +81,18 @@ The `experiments/windows-coreadi-wine` branch contains a **separate, opt-in** im
 Prerequisites:
 
 - Linux x86_64 and Docker Compose V2.
-- A complete, legitimately obtained **64-bit Windows iTunes Apple Application Support installation**, including `CoreADI64.dll` and its dependency DLLs. Put the files into the untracked `apple-windows/` directory so `apple-windows/CoreADI64.dll` exists. This project intentionally does not redistribute or download Apple's Windows binaries.
+- A complete, legitimately obtained **64-bit Windows iTunes Apple Application Support installation**, including `CoreADI64.dll` and its dependency DLLs. The optional host-side script `scripts/prepare_windows_coreadi.sh` can download the original Windows installer directly from Apple and extract those files. It requires `curl`, `7z`, and `msiextract` (msitools). This project does not redistribute Apple's Windows binaries.
 - Space for a distinct Wine prefix per client identity. Keep the Docker state volume private and persistent.
 
-After supplying the Apple files, run:
+After obtaining the Apple files (or running the extraction script on the host), start the experimental server:
 
 ```sh
+bash scripts/prepare_windows_coreadi.sh # only if ./apple-windows does not exist
 docker compose -f compose.windows.yaml up --build -d
 docker compose -f compose.windows.yaml logs -f anisette
 curl -fsS http://127.0.0.1:6969/healthz
 curl -fsS http://127.0.0.1:6969/v3/client_info
+curl -fsS http://127.0.0.1:6969/healthz/adi # probes DLL loading under Wine
 ```
 
 The Windows profile exposed to AltStore is:

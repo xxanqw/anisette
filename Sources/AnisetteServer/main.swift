@@ -2,6 +2,27 @@ import Foundation
 import Hummingbird
 import HummingbirdWebSocket
 
+// Diagnostic events contain only operation names and coarse error categories.
+// Never record Apple credentials, ADI state, device identifiers or generated OTPs.
+func logAnisetteEvent(_ event: String) {
+    FileHandle.standardError.write(Data("AnisetteV3 \(event)\n".utf8))
+}
+
+func anisetteErrorCategory(_ error: Error) -> String {
+    guard let value = error as? AnisetteError else { return "internal" }
+    switch value {
+    case .invalidInput(let reason):
+        if reason.contains("Unsupported Windows ADI state") { return "stale-adi-pb" }
+        if reason.contains("identifier does not match") { return "identifier-mismatch" }
+        if reason.contains("token does not match") { return "token-mismatch" }
+        return "invalid-input"
+    case .unavailable:
+        return "unavailable"
+    case .coreADI:
+        return "coreadi"
+    }
+}
+
 let env = ProcessInfo.processInfo.environment
 let corePath = env["ANISETTE_COREADI_PATH"] ?? "/data/CoreADI.x86_64"
 let statePath = env["ANISETTE_STATE_DIR"] ?? "/state"
@@ -41,10 +62,12 @@ do {
         }
     }
     router.get("/v3/client_info") { _, _ in
-        ClientInfoResponse(clientInfo: clientInfo, userAgent: userAgent)
+        logAnisetteEvent("client_info.request backend=\(backend)")
+        return ClientInfoResponse(clientInfo: clientInfo, userAgent: userAgent)
     }
 
     router.post("/v3/get_headers") { request, context -> HeadersResponse in
+        logAnisetteEvent("headers.request")
         do {
             let message = try await request.decode(as: HeadersRequest.self, context: context)
             let identifier = try AnisetteProtocol.decodeBase64(
@@ -53,13 +76,17 @@ do {
             let state = try AnisetteProtocol.decodeBase64(
                 message.adiPB, named: "adi_pb", maxBytes: ProvisionedState.maxStoreBytes + 64
             )
-            return try await engine.headers(hostUUID: identifier, stateBytes: state)
+            let response = try await engine.headers(hostUUID: identifier, stateBytes: state)
+            logAnisetteEvent(response.result == "Headers" ? "headers.success" : "headers.error result=engine")
+            return response
         } catch {
+            logAnisetteEvent("headers.error category=\(anisetteErrorCategory(error))")
             return .failure(String(describing: error))
         }
     }
 
     router.ws("/v3/provisioning_session") { inbound, outbound, _ in
+        logAnisetteEvent("provision.connected")
         var activeSession: UUID?
         var failureType = "InvalidIdentifier"
         do {
@@ -88,8 +115,10 @@ do {
             let spimMessage = try AnisetteProtocol.parseMessage(String(buffer: spimFrame.data))
             let spim = try AnisetteProtocol.decodeBase64(spimMessage["spim"], named: "spim")
 
+            logAnisetteEvent("provision.begin")
             let session = try await engine.begin(hostUUID: identifier, spim: spim)
             activeSession = session.id
+            logAnisetteEvent("provision.begin.success")
             failureType = "EndProvisioningError"
             try await outbound.write(.text(try AnisetteProtocol.encodeMessage([
                 "result": "GiveEndProvisioningData",
@@ -102,14 +131,17 @@ do {
             let finalMessage = try AnisetteProtocol.parseMessage(String(buffer: finalFrame.data))
             let ptm = try AnisetteProtocol.decodeBase64(finalMessage["ptm"], named: "ptm")
             let tk = try AnisetteProtocol.decodeBase64(finalMessage["tk"], named: "tk")
+            logAnisetteEvent("provision.finish")
             let state = try await engine.finish(id: session.id, ptm: ptm, tk: tk)
             activeSession = nil
+            logAnisetteEvent("provision.finish.success")
 
             try await outbound.write(.text(try AnisetteProtocol.encodeMessage([
                 "result": "ProvisioningSuccess",
                 "adi_pb": state.base64EncodedString(),
             ])))
         } catch {
+            logAnisetteEvent("provision.error stage=\(failureType) category=\(anisetteErrorCategory(error))")
             if let activeSession {
                 await engine.cancel(id: activeSession)
             }
